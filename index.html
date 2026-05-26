@@ -235,8 +235,6 @@
 </head>
 <body>
 
-<!-- AUTH -->
-
 <div id="authMenu">
 
     <div class="authBox">
@@ -252,8 +250,6 @@
             </button>
 
         </div>
-
-        <!-- LOGIN -->
 
         <div id="loginPanel">
 
@@ -273,8 +269,6 @@
             </button>
 
         </div>
-
-        <!-- REGISTER -->
 
         <div
             id="registerPanel"
@@ -301,8 +295,6 @@
     </div>
 
 </div>
-
-<!-- APP -->
 
 <div id="app">
 
@@ -363,7 +355,7 @@ class ServerStorage{
 
                     headers:{
                         'Content-Type':
-                            'application/json'
+                            'application/json; charset=utf-8'
                     },
 
                     body:
@@ -387,7 +379,7 @@ class ServerStorage{
                 value,
 
                 mimeType:
-                    'text/plain'
+                    'text/plain; charset=utf-8'
             }
         );
     }
@@ -415,6 +407,7 @@ class ServerStorage{
         return null;
     }
 
+    // SỬA ĐỔI: Kiểm tra key có tồn tại VÀ dữ liệu bên trong có khác rỗng hay không
     async exists(key){
 
         const result =
@@ -430,7 +423,9 @@ class ServerStorage{
 
         return (
             result.success &&
-            !!result.data
+            !!result.data &&
+            result.data.value !== null &&
+            result.data.value.trim() !== ''
         );
     }
 }
@@ -472,7 +467,38 @@ const statusText =
         'status'
     );
 
+const messageInput = 
+    document.getElementById(
+        'messageInput'
+    );
+
 let currentUser = null;
+let isTyping = false;
+let isComposing = false;
+
+/* IME LISTENERS FOR JAPANESE TEXT INPUT */
+messageInput.addEventListener('compositionstart', () => {
+    isComposing = true;
+});
+
+messageInput.addEventListener('compositionend', () => {
+    isComposing = false;
+});
+
+messageInput.addEventListener('focus', () => {
+    isTyping = true;
+});
+
+messageInput.addEventListener('blur', () => {
+    isTyping = false;
+});
+
+messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !isComposing) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
 
 /* UI */
 
@@ -573,7 +599,7 @@ async function login(){
             'user_' + username
         );
 
-    if(!data){
+    if(!data || data.trim() === ''){
 
         alert(
             'User not found'
@@ -637,7 +663,7 @@ function logout(){
 
 async function loadMessages(){
 
-    if(!currentUser){
+    if(!currentUser || isComposing || isTyping){
         return;
     }
 
@@ -678,13 +704,23 @@ async function loadMessages(){
                 msg.time
             );
 
+        // GIẢI MÃ TIN NHẮN TỪ BASE64 NẾU CÓ TIỀN TỐ b64:
+        let decodedMessage = msg.message;
+        try {
+            if (msg.message && msg.message.startsWith('b64:')) {
+                decodedMessage = decodeURIComponent(atob(msg.message.substring(4)));
+            }
+        } catch(e) {
+            decodedMessage = msg.message;
+        }
+
         div.innerHTML = `
             <div class="username">
                 ${escapeHtml(msg.user)}
             </div>
 
             <div>
-                ${escapeHtml(msg.message)}
+                ${escapeHtml(decodedMessage)}
             </div>
 
             <div class="time">
@@ -710,13 +746,8 @@ async function sendMessage(){
         return;
     }
 
-    const input =
-        document.getElementById(
-            'messageInput'
-        );
-
     const text =
-        input.value.trim();
+        messageInput.value.trim();
 
     if(!text){
         return;
@@ -739,13 +770,16 @@ async function sendMessage(){
         }catch{}
     }
 
+    // MÃ HÓA TIN NHẮN CHỮ GỐC SANG BASE64 ĐỂ TRÁNH LỖI PHÔNG CHỮ KHI LƯU TRÊN SERVER
+    const encodedText = 'b64:' + btoa(encodeURIComponent(text));
+
     messages.push({
 
         user:
             currentUser,
 
         message:
-            text,
+            encodedText,
 
         time:
             Date.now()
@@ -766,9 +800,10 @@ async function sendMessage(){
         JSON.stringify(messages)
     );
 
-    input.value = '';
-
-    loadMessages();
+    messageInput.value = '';
+    
+    isTyping = false;
+    await loadMessages();
 }
 
 function escapeHtml(text){
